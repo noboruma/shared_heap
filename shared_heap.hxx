@@ -1,13 +1,11 @@
 #include "shared_heap.hh"
-#include "exceptions.hh"
 
 namespace allocator {
 
     template<int HEAP_SIZE>
     SharedHeap<HEAP_SIZE>::SharedHeap()
-    : _heap(nullptr)
-    , _heapfd(-1)
-    , _capacity(HEAP_SIZE)
+    : _heapfd(-1)
+    , _heap(nullptr)
     {
         _heapfd = open("./shared", O_CREAT|O_DIRECT|O_RDWR, S_IRUSR|S_IWUSR);
         if(errno != 0) {
@@ -21,12 +19,12 @@ namespace allocator {
         if(errno != 0) {
             throw exception::LibcFault(std::string{} + "mmap error: " + strerror(errno));
         }
-        _head = next_aligned_addr<typename BookList::Node>(_heap);
+        _head = next_aligned_addr<typename BookKeeperList::Node>(_heap);
         if(_head->occupy_size == 0 && _head->free_size == 0) {
             _head->occupy_size = 0;
-            _head->free_size   = HEAP_SIZE - ((char*)_heap - (char*)_head);
+            _head->free_size   = HEAP_SIZE - (_heap - reinterpret_cast<char*>(_head));
         }
-        _end = (char*)_head + _head->free_size;
+        _end   = reinterpret_cast<char*>(_head) + HEAP_SIZE - (_heap - reinterpret_cast<char*>(_head));
     }
 
     template<int HEAP_SIZE>
@@ -35,7 +33,7 @@ namespace allocator {
         std::cout <<  std::endl;
         std::cout << "list:" << std::endl;
 
-        typename BookList::iterator nodeIt = _head;
+        typename BookKeeperList::iterator nodeIt = _head;
         while(nodeIt != _end) {
             std::cout << "node: " << &nodeIt << std::endl;
             std::cout << "end: " << (void*)_end << std::endl;
@@ -47,22 +45,24 @@ namespace allocator {
     }
     template<int HEAP_SIZE>
     SharedHeap<HEAP_SIZE>::~SharedHeap() noexcept {
-        munmap(_heap, HEAP_SIZE);
-        if(errno != 0) {
-            std::cerr << std::string{} + "unmap error: " + strerror(errno)<<std::endl;
+        if(_heap != nullptr) {
+            munmap(_heap, HEAP_SIZE);
+            if(errno != 0) {
+                std::cerr << std::string{} + "unmap error: " + strerror(errno)<<std::endl;
+            }
         }
-        close(_heapfd);
-        if(errno != 0) {
-            std::cerr << std::string{} +"close error: " + strerror(errno)<<std::endl;
+        if(_heapfd != -1) {
+            close(_heapfd);
+            if(errno != 0) {
+                std::cerr << std::string{} +"close error: " + strerror(errno)<<std::endl;
+            }
         }
     }
 
     template<int HEAP_SIZE>
     void SharedHeap<HEAP_SIZE>::deallocate(void * ptr)
     {
-        print();
-
-        typename BookList::iterator nodeIt = _head,
+        typename BookKeeperList::iterator nodeIt = _head,
                  prevNodeIt = nodeIt,
                  nextNodeIt = _head;
         ++nextNodeIt;
@@ -86,9 +86,51 @@ namespace allocator {
                     nodeIt->free_size +=  nextNodeIt->free_size;
                 }
             }
-            print();
             return;
         }
         throw exception::OutOfBound("wrong deallocation");
+    }
+
+    template<int HEAP_SIZE>
+    template<typename T>
+    T* SharedHeap<HEAP_SIZE>::next_aligned_addr(char * next_addr)
+    {
+        void * top = reinterpret_cast<void*>(next_addr);
+        size_t capacity =_end-reinterpret_cast<char*>(top);
+        auto * next_valid_addr = reinterpret_cast<T*>(std::align(alignof(T), sizeof(T), top, capacity));
+        if(next_valid_addr == nullptr) {
+            throw exception::OutOfMemory("not enough space");
+        }
+        return next_valid_addr;
+    }
+
+    template<int HEAP_SIZE>
+    template<typename T>
+    T* SharedHeap<HEAP_SIZE>::allocate(size_t n)
+    {
+        if(!std::is_standard_layout<T>::value) {
+            throw exception::MemoryFormatFault("type not trivial!");
+        }
+        typename BookKeeperList::iterator it = _head;
+        while(it != _end) {
+            if(it->free_size > n*sizeof(T) + sizeof(typename BookKeeperList::Node)) {
+                auto *top = reinterpret_cast<char*>(it->data());
+                auto nextTAddr = next_aligned_addr<T>(top);
+                top = reinterpret_cast<char*>(nextTAddr);
+                top += sizeof(T)*n;
+
+                auto old_size = it->free_size;
+                auto nextNodeAddr = next_aligned_addr<typename BookKeeperList::Node>(top);
+
+                it->occupy_size = reinterpret_cast<char*>(nextNodeAddr) - reinterpret_cast<char*>(&it);
+                it->free_size = 0;
+                auto *nextNode = new (nextNodeAddr) typename BookKeeperList::Node();
+                nextNode->occupy_size = 0;
+                nextNode->free_size = old_size - it->occupy_size;
+                return nextTAddr;
+            }
+            ++it;
+        }
+        throw exception::OutOfMemory("not enough space");
     }
 }
