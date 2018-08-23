@@ -4,21 +4,14 @@
 #include "exceptions.hh"
 
 #include <cstdlib>
-#include <dlfcn.h>
 #include <errno.h>
-#include <string.h>
 #include <fcntl.h>
-
-#include <linux/memfd.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/syscall.h>
-#include <sys/utsname.h>
-
-#include <unistd.h>
-#include <memory>
-
 #include <iostream>
+#include <linux/memfd.h>
+#include <memory>
+#include <string.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 namespace allocator {
     template<int HEAP_SIZE=1024>
