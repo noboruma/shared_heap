@@ -19,11 +19,22 @@ namespace allocator {
         if(errno != 0) {
             throw exception::LibcFault(std::string{} + "mmap error: " + strerror(errno));
         }
-        _head = next_aligned_addr<typename BookKeeperList::Node>(_heap);
+
+        _maccess= next_aligned_addr<std::mutex>(_heap);
+        _head = next_aligned_addr<typename BookKeeperList::Node>(reinterpret_cast<char*>(_maccess)+sizeof(std::mutex));
+
+        auto lfd = open("./lock", O_CREAT|O_DIRECT|O_RDWR, S_IRUSR|S_IWUSR);
+        if(errno != 0) {
+            throw exception::LibcFault(std::string{} + "open error: " + strerror(errno));
+        }
+        lockf(lfd, F_LOCK, 0);
         if(_head->occupy_size == 0 && _head->free_size == 0) {
+            _maccess = new (_maccess) std::mutex{};
             _head->occupy_size = 0;
             _head->free_size   = HEAP_SIZE - (_heap - reinterpret_cast<char*>(_head));
         }
+        lockf(lfd, F_ULOCK, 0);
+        close(lfd);
         _end   = reinterpret_cast<char*>(_head) + HEAP_SIZE - (_heap - reinterpret_cast<char*>(_head));
     }
 
@@ -43,6 +54,7 @@ namespace allocator {
             ++nodeIt;
         }
     }
+
     template<int HEAP_SIZE>
     SharedHeap<HEAP_SIZE>::~SharedHeap() noexcept {
         if(_heap != nullptr) {
@@ -62,6 +74,7 @@ namespace allocator {
     template<int HEAP_SIZE>
     void SharedHeap<HEAP_SIZE>::deallocate(void * ptr)
     {
+        std::lock_guard<std::mutex> l(*_maccess);
         typename BookKeeperList::iterator nodeIt = _head,
                  prevNodeIt = nodeIt,
                  nextNodeIt = _head;
@@ -111,6 +124,7 @@ namespace allocator {
         if(!std::is_standard_layout<T>::value) {
             throw exception::MemoryFormatFault("type not trivial!");
         }
+        std::lock_guard<std::mutex> l(*_maccess);
         typename BookKeeperList::iterator it = _head;
         while(it != _end) {
             if(it->free_size > n*sizeof(T) + sizeof(typename BookKeeperList::Node)) {

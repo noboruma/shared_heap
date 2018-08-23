@@ -12,6 +12,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <mutex>
 
 namespace allocator {
     template<int HEAP_SIZE=1024>
@@ -117,6 +118,7 @@ namespace allocator {
             char *_heap;
             typename BookKeeperList::Node *_head;
             char *_end;
+            std::mutex *_maccess;
 
     };
 }//!allocator
