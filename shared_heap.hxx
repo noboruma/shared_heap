@@ -31,11 +31,11 @@ namespace allocator {
         if(_head->occupy_size == 0 && _head->free_size == 0) {
             _maccess = new (_maccess) std::mutex{};
             _head->occupy_size = 0;
-            _head->free_size   = HEAP_SIZE - (_heap - reinterpret_cast<char*>(_head));
+            _head->free_size   = HEAP_SIZE - (reinterpret_cast<char*>(_head) - _heap);
         }
         lockf(lfd, F_ULOCK, 0);
         close(lfd);
-        _end   = reinterpret_cast<char*>(_head) + HEAP_SIZE - (_heap - reinterpret_cast<char*>(_head));
+        _end = reinterpret_cast<char*>(_head) + HEAP_SIZE - (reinterpret_cast<char*>(_head) - _heap);
     }
 
     template<int HEAP_SIZE>
