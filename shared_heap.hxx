@@ -91,8 +91,8 @@ namespace allocator {
             if(prevNodeIt != nodeIt) {
                 if(prevNodeIt->free_size != 0) {
                     prevNodeIt->free_size += nodeIt->free_size;
+                    nodeIt = prevNodeIt;
                 }
-                nodeIt = prevNodeIt;
             }
             if(nextNodeIt != _end) {
                 if(nextNodeIt->free_size != 0) {
